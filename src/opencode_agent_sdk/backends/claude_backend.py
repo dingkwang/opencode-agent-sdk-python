@@ -1,5 +1,4 @@
 from .base import AgentBackend, RunResult, Policy
-import os
 
 class ClaudeBackend(AgentBackend):
     def __init__(self, policy: Policy, model_id: str = "claude-3-5-sonnet-latest"):

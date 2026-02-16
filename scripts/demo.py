@@ -3,10 +3,10 @@ import argparse
 import sys
 import os
 
-# 将 src 目录加入路径以便本地测试运行
-sys.path.append(os.path.join(os.path.dirname(__file__), '../src'))
+# Add src directory to path for local script execution.
+sys.path.append(os.path.join(os.path.dirname(__file__), "../src"))
 
-from seamless_switch.runner import run_agent
+from opencode_agent_sdk.runner import run_agent
 
 async def main():
     parser = argparse.ArgumentParser(description="Seamless Switch Demo")

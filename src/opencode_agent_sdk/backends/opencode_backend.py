@@ -1,6 +1,9 @@
 from .base import AgentBackend, RunResult, Policy
-import httpx
-import os
+
+try:
+    import httpx
+except ImportError:  # pragma: no cover - optional dependency
+    httpx = None  # type: ignore
 
 class OpenCodeBackend(AgentBackend):
     def __init__(self, policy: Policy, base_url: str = "http://127.0.0.1:4096"):
@@ -11,6 +14,9 @@ class OpenCodeBackend(AgentBackend):
     async def astart(self) -> None:
         print(f"Connecting to OpenCode Server at {self.base_url}...")
         # 实际逻辑应调用 /sessions endpoint
+        if httpx is None:
+            print("Warning: httpx not installed; OpenCode health probe skipped.")
+            return
         try:
             async with httpx.AsyncClient() as client:
                 # 假设的服务心跳检查
