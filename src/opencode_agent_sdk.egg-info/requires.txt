@@ -1,0 +1,10 @@
+anyio
+httpx
+
+[claude]
+claude-agent-sdk
+
+[dev]
+pytest>=8.0
+
+[opencode]
