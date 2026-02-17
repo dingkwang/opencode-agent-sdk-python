@@ -1,0 +1,6 @@
+external/
+old/
+.env
+__pycache__/
+*.pyc
+*.egg-info/

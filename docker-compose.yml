@@ -1,0 +1,17 @@
+services:
+  opencode:
+    build:
+      context: .
+      dockerfile: Dockerfile.opencode
+    ports:
+      - "54321:54321"
+    env_file:
+      - .env
+
+  test:
+    build:
+      context: .
+      dockerfile: Dockerfile.test
+    env_file:
+      - .env
+    working_dir: /workspace

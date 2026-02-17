@@ -1,0 +1,7 @@
+FROM oven/bun:latest
+
+RUN bun install -g opencode-ai@1.2.6
+
+EXPOSE 54321
+
+CMD ["opencode", "serve", "--port", "54321", "--hostname", "0.0.0.0"]
