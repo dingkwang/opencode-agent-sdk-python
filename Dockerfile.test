@@ -1,0 +1,37 @@
+FROM python:3.12-slim
+
+# Install system deps
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        curl unzip git ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install opencode CLI (native binary)
+RUN curl -fsSL https://opencode.ai/install | bash
+ENV PATH="/root/.opencode/bin:${PATH}"
+
+# Install uv for fast Python dependency management
+RUN pip install --no-cache-dir uv
+
+# Copy SDK source and install
+WORKDIR /sdk
+COPY pyproject.toml uv.lock ./
+COPY src/ src/
+RUN uv sync --no-dev
+
+# Create a workspace with sample files for the test
+WORKDIR /workspace
+RUN echo "Hello from workspace" > hello.txt \
+ && echo "print('sample')" > sample.py \
+ && mkdir -p subdir && echo "nested" > subdir/nested.txt
+
+# Initialise a git repo (opencode may require one)
+RUN git config --global user.email "test@test.com" \
+ && git config --global user.name "Test" \
+ && git init && git add -A && git commit -m "init"
+
+# Copy test script and entrypoint
+COPY scripts/test_sdk_docker.py /sdk/test_sdk_docker.py
+COPY scripts/docker-entrypoint.sh /docker-entrypoint.sh
+RUN chmod +x /docker-entrypoint.sh
+
+ENTRYPOINT ["/docker-entrypoint.sh"]
