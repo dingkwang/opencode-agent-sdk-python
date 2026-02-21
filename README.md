@@ -2,7 +2,13 @@
 
 Python SDK for building agents backed by [OpenCode](https://github.com/nichochar/opencode). Drop-in replacement for `claude_agent_sdk` with support for any LLM provider (Anthropic, OpenAI, xAI, etc.).
 
-https://github.com/dingkwang/opencode-agent-sdk-python/raw/main/demo.mp4
+<video src="https://github.com/user-attachments/assets/061fb862-3253-46aa-92a7-71dc9258960a"
+       autoplay
+       muted
+       loop
+       playsinline
+       controls>
+</video>
 
 ## Installation
 
