@@ -64,7 +64,7 @@ class SDKClient:
         self._transport: Any = None  # SubprocessTransport or HTTPTransport
         self._session: Any = None  # ACPSession (subprocess mode only)
         self._http_mode = bool(options.server_url)
-        self._pending_response: list[dict[str, Any]] | None = None
+        self._pending_parts: dict[str, Any] | None = None
 
     async def connect(self) -> None:
         """Connect to opencode — either via HTTP or subprocess ACP."""
@@ -120,7 +120,7 @@ class SDKClient:
             await self._transport.close()
             self._transport = None
         self._session = None
-        self._pending_response = None
+        self._pending_parts = None
 
     async def query(self, prompt: str | AsyncIterable[Any]) -> None:
         """Send a user prompt.
@@ -144,12 +144,13 @@ class SDKClient:
                     parts.append({"type": "text", "text": str(item)})
 
         if self._http_mode:
-            # HTTP mode: send chat request, store response for receive_response
-            self._pending_response = await self._transport.chat(
-                parts=parts,
-                model_id=self._options.model,
-                provider_id=self._options.provider_id,
-            )
+            # HTTP mode: store parts; actual send happens in receive_response
+            # via SSE streaming.
+            self._pending_parts = {
+                "parts": parts,
+                "model_id": self._options.model,
+                "provider_id": self._options.provider_id,
+            }
         else:
             # Subprocess mode: send via ACP session
             if self._session is None:
@@ -177,11 +178,13 @@ class SDKClient:
                 },
             )
 
-            # Translate stored response parts to SDK messages
-            if self._pending_response is not None:
-                for msg in self._transport.translate_parts(self._pending_response):
+            # Stream response parts via SSE
+            if self._pending_parts is not None:
+                async for msg in self._transport.chat_stream(
+                    **self._pending_parts,
+                ):
                     yield msg
-                self._pending_response = None
+                self._pending_parts = None
         else:
             # Subprocess ACP mode
             if self._session is None:
