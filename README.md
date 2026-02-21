@@ -2,6 +2,8 @@
 
 Python SDK for building agents backed by [OpenCode](https://github.com/nichochar/opencode). Drop-in replacement for `claude_agent_sdk` with support for any LLM provider (Anthropic, OpenAI, xAI, etc.).
 
+https://github.com/dingkwang/opencode-agent-sdk-python/raw/main/demo.mp4
+
 ## Installation
 
 ```bash
@@ -234,6 +236,93 @@ All method calls, message types, hooks, and tool decorators stay the same. Only 
 | `ClaudeSDKClient` | `SDKClient` |
 | `ClaudeAgentOptions` | `AgentOptions` |
 
+## Demo: End-to-End Walkthrough
+
+A full working demo that connects to `opencode serve`, sends a prompt to clone a GitHub repo, and streams the LLM response back through the SDK.
+
+### 1. Configure API keys
+
+Create a `.env` file in the project root with your provider key:
+
+```bash
+ANTHROPIC_API_KEY=sk-ant-...
+```
+
+### 2. Start the server
+
+```bash
+docker compose up -d opencode
+```
+
+This builds and starts the `opencode serve` container on port 54321.
+
+### 3. Install dependencies
+
+```bash
+uv sync
+```
+
+### 4. Run the E2E demo
+
+```bash
+uv run python scripts/e2e_test.py
+```
+
+### Expected output
+
+```
+============================================================
+E2E Test: Clone repo & explain project
+============================================================
+Server: http://127.0.0.1:54321
+
+[*] Connecting ...
+[*] Connected.
+
+[>] Prompt:
+Clone the repo https://github.com/dingkwang/opencode-agent-sdk-python and then
+explain what the project does. Give a concise summary of its purpose,
+architecture, and key components.
+
+------------------------------------------------------------
+
+  [system:init]
+  [system:step_start]
+
+  [assistant]
+  ## opencode-agent-sdk-python
+  ### Purpose
+  An open-source Python SDK that serves as a drop-in replacement for Anthropic's
+  proprietary `claude_agent_sdk`. It delegates all LLM work to OpenCode — an
+  open-source headless server that supports any provider ...
+  ...
+
+============================================================
+  [result] session  = ses_...
+           cost     = $0.024723
+           turns    = 1
+           is_error = False
+============================================================
+
+[*] Message counts: {'system': 2, 'assistant': 1, 'result': 1}
+[*] E2E test complete.
+```
+
+### What's happening
+
+1. `SDKClient` creates an HTTP session against `opencode serve`
+2. `query()` sends the user prompt via `POST /session/{id}/message`
+3. `receive_response()` yields typed messages: `SystemMessage` (init, step events), `AssistantMessage` (LLM text/tool calls), and `ResultMessage` (cost, session ID, turn count)
+4. `disconnect()` cleans up the session
+
+### Customizing the demo
+
+Set a custom server URL via environment variable:
+
+```bash
+OPENCODE_SERVER_URL=http://your-host:54321 uv run python scripts/e2e_test.py
+```
+
 ## Running with Docker
 
 ```bash
@@ -257,6 +346,9 @@ uv run pytest
 
 # Run demo against a running opencode serve
 uv run python scripts/opencode_ai_demo.py
+
+# Interactive multi-turn chat
+uv run python scripts/chat.py
 ```
 
 ## License
