@@ -23,7 +23,7 @@ from .transport import SubprocessTransport
 
 logger = logging.getLogger(__name__)
 
-_PROTOCOL_VERSION = "2025-01-01"
+_PROTOCOL_VERSION = 1
 
 
 class ACPSession:
@@ -128,8 +128,9 @@ class ACPSession:
             await self._handle_permission_request(msg)
             return
 
-        # Notification: sessionUpdate
-        if method == "sessionUpdate":
+        # Notification: session/update (opencode ACP v1.2.15+)
+        # Also accept legacy "sessionUpdate" for backwards compatibility
+        if method in ("session/update", "sessionUpdate"):
             params = msg.get("params", {})
             await self._update_queue.put(params)
             return
@@ -213,13 +214,24 @@ class ACPSession:
         cwd: str,
         mcp_servers: list[dict[str, Any]] | None = None,
         model: str | None = None,
+        provider_id: str | None = None,
+        permission_mode: str = "",
+        system_prompt: str = "",
     ) -> str:
         """Create a new ACP session. Returns the session ID."""
         params: dict[str, Any] = {
             "cwd": cwd,
             "mcpServers": mcp_servers or [],
         }
-        result = await self._send_request("newSession", params)
+        if model:
+            params["model"] = model
+        if provider_id:
+            params["provider"] = provider_id
+        if permission_mode:
+            params["permissionMode"] = permission_mode
+        if system_prompt:
+            params["systemPrompt"] = system_prompt
+        result = await self._send_request("session/new", params)
         self._session_id = result.get("sessionId", "")
         logger.debug("New session: %s", self._session_id)
         return self._session_id
@@ -231,7 +243,7 @@ class ACPSession:
             "cwd": cwd,
             "mcpServers": [],
         }
-        result = await self._send_request("loadSession", params)
+        result = await self._send_request("session/load", params)
         self._session_id = result.get("sessionId", session_id)
         return self._session_id
 
@@ -243,7 +255,7 @@ class ACPSession:
         self._usage = {}
         self._cost = {}
 
-        result = await self._send_request("prompt", {
+        result = await self._send_request("session/prompt", {
             "sessionId": self._session_id,
             "prompt": parts,
         })
@@ -260,7 +272,7 @@ class ACPSession:
 
     async def cancel(self) -> None:
         """Cancel the current operation."""
-        await self._send_notification("cancel", {
+        await self._send_notification("session/cancel", {
             "sessionId": self._session_id,
         })
 

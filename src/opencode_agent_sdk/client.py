@@ -100,7 +100,10 @@ class SDKClient:
         await self._session.initialize()
 
         # Create or resume session
-        mcp_servers = _build_mcp_servers(self._options.mcp_servers)
+        # TODO: MCP server passthrough not yet supported by opencode ACP
+        # (expects http/sse type servers, not stdio subprocess servers).
+        # Pass empty list for now to unblock session creation.
+        # See docs/opencode_gap.md §1 for full implementation plan.
 
         if self._options.resume:
             await self._session.load_session(
@@ -110,8 +113,11 @@ class SDKClient:
         else:
             await self._session.new_session(
                 cwd=self._options.cwd,
-                mcp_servers=mcp_servers,
+                mcp_servers=[],
                 model=self._options.model or None,
+                provider_id=self._options.provider_id or None,
+                permission_mode=self._options.permission_mode,
+                system_prompt=self._options.system_prompt,
             )
 
     async def disconnect(self) -> None:
