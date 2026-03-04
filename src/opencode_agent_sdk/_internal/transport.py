@@ -46,6 +46,7 @@ class SubprocessTransport:
         self._cwd = os.path.abspath(cwd)
         self._process: anyio.abc.Process | None = None
         self._read_lock = anyio.Lock()
+        self._stderr_task: anyio.abc.TaskGroup | None = None
 
     async def connect(self) -> None:
         """Spawn the opencode acp subprocess."""
@@ -53,11 +54,46 @@ class SubprocessTransport:
         logger.debug("Spawning: %s acp --cwd %s", binary, self._cwd)
 
         self._process = await anyio.open_process(
-            [binary, "acp", "--cwd", self._cwd],
+            [binary, "acp", "--print-logs", "--log-level", "INFO", "--cwd", self._cwd],
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
         )
+
+        # Drain stderr in background to prevent pipe buffer deadlock and
+        # surface opencode's internal logs (model routing, provider init, etc.)
+        self._stderr_scope = await anyio.create_task_group().__aenter__()
+        self._stderr_scope.start_soon(self._drain_stderr)
+
+    async def _drain_stderr(self) -> None:
+        """Read stderr lines and log them.
+
+        Surfaces opencode's internal logs — especially ``service=llm``
+        lines that show which provider/model is actually used.
+        """
+        if self._process is None or self._process.stderr is None:
+            return
+        buffer = b""
+        try:
+            async for chunk in self._process.stderr:
+                buffer += chunk
+                while b"\n" in buffer:
+                    line_bytes, buffer = buffer.split(b"\n", 1)
+                    line = line_bytes.decode("utf-8", errors="replace").strip()
+                    if not line:
+                        continue
+                    if "service=llm" in line:
+                        logger.info("opencode LLM: %s", line)
+                    elif "service=provider" in line and "found" in line:
+                        logger.debug("opencode provider: %s", line)
+                    elif "ERR" in line or "error" in line.lower():
+                        logger.warning("opencode stderr: %s", line)
+                    else:
+                        logger.debug("opencode: %s", line)
+        except anyio.ClosedResourceError:
+            pass
+        except Exception as exc:
+            logger.debug("stderr drain ended: %s", exc)
 
     async def write(self, data: dict[str, Any]) -> None:
         """Write a JSON-RPC message (NDJSON line) to the subprocess stdin."""
@@ -108,5 +144,14 @@ class SubprocessTransport:
             await self._process.wait()
         except Exception:
             pass
+
+        # Clean up the stderr drain task group
+        if self._stderr_scope is not None:
+            try:
+                self._stderr_scope.cancel_scope.cancel()
+                await self._stderr_scope.__aexit__(None, None, None)
+            except Exception:
+                pass
+            self._stderr_scope = None
 
         self._process = None
