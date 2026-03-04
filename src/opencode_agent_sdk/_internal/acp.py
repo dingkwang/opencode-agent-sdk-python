@@ -218,15 +218,17 @@ class ACPSession:
         permission_mode: str = "",
         system_prompt: str = "",
     ) -> str:
-        """Create a new ACP session. Returns the session ID."""
+        """Create a new ACP session and optionally set the model.
+
+        OpenCode's ``session/new`` does not accept model/provider params.
+        The model must be set separately via ``session/set_model`` after
+        the session is created.  The ``modelId`` format is
+        ``"{providerID}/{modelID}"``.
+        """
         params: dict[str, Any] = {
             "cwd": cwd,
             "mcpServers": mcp_servers or [],
         }
-        if model:
-            params["model"] = model
-        if provider_id:
-            params["provider"] = provider_id
         if permission_mode:
             params["permissionMode"] = permission_mode
         if system_prompt:
@@ -234,6 +236,25 @@ class ACPSession:
         result = await self._send_request("session/new", params)
         self._session_id = result.get("sessionId", "")
         logger.debug("New session: %s", self._session_id)
+
+        # Set the model via session/set_model (session/new ignores model params)
+        if model and provider_id:
+            model_id = f"{provider_id}/{model}"
+        elif model:
+            model_id = model
+        else:
+            model_id = None
+
+        if model_id:
+            try:
+                await self._send_request("session/set_model", {
+                    "sessionId": self._session_id,
+                    "modelId": model_id,
+                })
+                logger.debug("Set model to %s", model_id)
+            except Exception as exc:
+                logger.warning("Failed to set model %s: %s", model_id, exc)
+
         return self._session_id
 
     async def load_session(
