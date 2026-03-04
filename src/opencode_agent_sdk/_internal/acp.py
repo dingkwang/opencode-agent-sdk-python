@@ -236,12 +236,17 @@ class ACPSession:
         logger.debug("New session: %s", self._session_id)
         return self._session_id
 
-    async def load_session(self, session_id: str, cwd: str) -> str:
+    async def load_session(
+        self,
+        session_id: str,
+        cwd: str,
+        mcp_servers: list[dict[str, Any]] | None = None,
+    ) -> str:
         """Resume an existing ACP session."""
         params: dict[str, Any] = {
             "sessionId": session_id,
             "cwd": cwd,
-            "mcpServers": [],
+            "mcpServers": mcp_servers or [],
         }
         result = await self._send_request("session/load", params)
         self._session_id = result.get("sessionId", session_id)

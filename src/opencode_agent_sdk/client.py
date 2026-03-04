@@ -65,6 +65,7 @@ class SDKClient:
         self._session: Any = None  # ACPSession (subprocess mode only)
         self._http_mode = bool(options.server_url)
         self._pending_parts: dict[str, Any] | None = None
+        self._mcp_bridge: Any = None  # McpHttpBridge for SDK MCP servers
 
     async def connect(self) -> None:
         """Connect to opencode — either via HTTP or subprocess ACP."""
@@ -99,21 +100,38 @@ class SDKClient:
         # Protocol handshake
         await self._session.initialize()
 
-        # Create or resume session
-        # TODO: MCP server passthrough not yet supported by opencode ACP
-        # (expects http/sse type servers, not stdio subprocess servers).
-        # Pass empty list for now to unblock session creation.
-        # See docs/opencode_gap.md §1 for full implementation plan.
+        # Start HTTP bridges for SDK-defined MCP servers (those with _tools).
+        # SDK tools have Python function handlers that must run in-process.
+        # We host them as HTTP MCP servers and tell opencode about them as
+        # remote servers.
+        effective_servers = dict(self._options.mcp_servers)
+        sdk_servers = {
+            name: cfg for name, cfg in effective_servers.items()
+            if isinstance(cfg, dict) and "_tools" in cfg
+        }
+        if sdk_servers:
+            from ._mcp_bridge import McpHttpBridge
+
+            self._mcp_bridge = McpHttpBridge()
+            for name in sdk_servers:
+                port = await self._mcp_bridge.start_server(name)
+                # Replace subprocess config with remote HTTP config
+                effective_servers[name] = {
+                    "url": f"http://127.0.0.1:{port}/mcp",
+                }
+
+        acp_mcp_servers = _build_mcp_servers(effective_servers)
 
         if self._options.resume:
             await self._session.load_session(
                 session_id=self._options.resume,
                 cwd=self._options.cwd,
+                mcp_servers=acp_mcp_servers,
             )
         else:
             await self._session.new_session(
                 cwd=self._options.cwd,
-                mcp_servers=[],
+                mcp_servers=acp_mcp_servers,
                 model=self._options.model or None,
                 provider_id=self._options.provider_id or None,
                 permission_mode=self._options.permission_mode,
@@ -135,6 +153,9 @@ class SDKClient:
 
     async def disconnect(self) -> None:
         """Shut down the transport and clean up."""
+        if self._mcp_bridge:
+            await self._mcp_bridge.stop_all()
+            self._mcp_bridge = None
         if self._transport:
             await self._transport.close()
             self._transport = None
@@ -219,18 +240,42 @@ class SDKClient:
 
 
 def _build_mcp_servers(servers: dict[str, Any]) -> list[dict[str, Any]]:
-    """Convert the mcp_servers dict to ACP mcpServers format."""
+    """Convert the mcp_servers dict to ACP mcpServers wire format.
+
+    ACP distinguishes server types by the presence of a ``type`` field:
+    - Local/stdio (no ``type``): ``{name, command, args, env}``
+    - Remote (``type: "remote"``): ``{name, type, url, headers}``
+
+    ``env`` and ``headers`` use ``[{name, value}]`` array format on the wire,
+    not dict format.
+    """
     result = []
     for name, config in servers.items():
-        if isinstance(config, dict):
-            entry: dict[str, Any] = {"name": name}
-            if "command" in config:
-                entry["transport"] = "stdio"
-                entry["command"] = config["command"]
-                entry["args"] = config.get("args", [])
-                entry["env"] = config.get("env", {})
-            elif "url" in config:
-                entry["transport"] = "sse"
-                entry["url"] = config["url"]
-            result.append(entry)
+        if not isinstance(config, dict):
+            continue
+        entry: dict[str, Any] = {"name": name}
+        if "command" in config:
+            # Local/stdio server — NO "type" field
+            entry["command"] = config["command"]
+            entry["args"] = config.get("args", [])
+            # Convert env dict to [{name, value}] array
+            raw_env = config.get("env", {})
+            if isinstance(raw_env, dict):
+                entry["env"] = [{"name": k, "value": v} for k, v in raw_env.items()]
+            elif isinstance(raw_env, list):
+                entry["env"] = raw_env
+            else:
+                entry["env"] = []
+        elif "url" in config:
+            # Remote server — has "type" field
+            entry["type"] = "remote"
+            entry["url"] = config["url"]
+            raw_headers = config.get("headers", {})
+            if isinstance(raw_headers, dict):
+                entry["headers"] = [{"name": k, "value": v} for k, v in raw_headers.items()]
+            elif isinstance(raw_headers, list):
+                entry["headers"] = raw_headers
+            else:
+                entry["headers"] = []
+        result.append(entry)
     return result
