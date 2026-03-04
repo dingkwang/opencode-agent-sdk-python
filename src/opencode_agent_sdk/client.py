@@ -120,6 +120,19 @@ class SDKClient:
                 system_prompt=self._options.system_prompt,
             )
 
+    def _build_init_data(self, session_id: str) -> dict[str, Any]:
+        """Build the init SystemMessage data dict from options."""
+        data: dict[str, Any] = {
+            "session_id": session_id,
+            "model": self._options.model,
+            "cwd": self._options.cwd,
+        }
+        if self._options.plugins:
+            data["plugins"] = self._options.plugins
+        if self._options.mcp_servers:
+            data["mcp_servers"] = list(self._options.mcp_servers.keys())
+        return data
+
     async def disconnect(self) -> None:
         """Shut down the transport and clean up."""
         if self._transport:
@@ -177,11 +190,9 @@ class SDKClient:
             # Yield init system message
             yield SystemMessage(
                 subtype="init",
-                data={
-                    "session_id": self._transport.session_id,
-                    "model": self._options.model,
-                    "cwd": self._options.cwd,
-                },
+                data=self._build_init_data(
+                    session_id=self._transport.session_id,
+                ),
             )
 
             # Stream response parts via SSE
@@ -198,11 +209,9 @@ class SDKClient:
 
             yield SystemMessage(
                 subtype="init",
-                data={
-                    "session_id": self._session.session_id,
-                    "model": self._options.model,
-                    "cwd": self._options.cwd,
-                },
+                data=self._build_init_data(
+                    session_id=self._session.session_id,
+                ),
             )
 
             async for msg in self._session.receive_messages():
