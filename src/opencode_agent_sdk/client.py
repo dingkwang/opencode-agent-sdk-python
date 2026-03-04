@@ -244,7 +244,8 @@ def _build_mcp_servers(servers: dict[str, Any]) -> list[dict[str, Any]]:
 
     ACP distinguishes server types by the presence of a ``type`` field:
     - Local/stdio (no ``type``): ``{name, command, args, env}``
-    - Remote (``type: "remote"``): ``{name, type, url, headers}``
+    - Remote HTTP (``type: "http"``): ``{name, type, url, headers}``
+    - Remote SSE (``type: "sse"``): ``{name, type, url, headers}``
 
     ``env`` and ``headers`` use ``[{name, value}]`` array format on the wire,
     not dict format.
@@ -267,8 +268,8 @@ def _build_mcp_servers(servers: dict[str, Any]) -> list[dict[str, Any]]:
             else:
                 entry["env"] = []
         elif "url" in config:
-            # Remote server — has "type" field
-            entry["type"] = "remote"
+            # Remote server — "http" for streamable-http, "sse" for SSE
+            entry["type"] = config.get("type", "http")
             entry["url"] = config["url"]
             raw_headers = config.get("headers", {})
             if isinstance(raw_headers, dict):
