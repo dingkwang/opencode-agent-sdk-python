@@ -100,22 +100,35 @@ class SDKClient:
         # Protocol handshake
         await self._session.initialize()
 
-        # Start HTTP bridges for SDK-defined MCP servers (those with _tools).
+        # Start HTTP bridges for SDK-defined MCP servers.
         # SDK tools have Python function handlers that must run in-process.
         # We host them as HTTP MCP servers and tell opencode about them as
         # remote servers.
+        #
+        # Two config formats are supported:
+        # - Opencode-format: has "_tools" key (from opencode create_sdk_mcp_server)
+        # - Claude-format:   has type="sdk" + "instance" key (from claude create_sdk_mcp_server)
         effective_servers = dict(self._options.mcp_servers)
         sdk_servers = {
             name: cfg for name, cfg in effective_servers.items()
-            if isinstance(cfg, dict) and "_tools" in cfg
+            if isinstance(cfg, dict) and (
+                "_tools" in cfg
+                or (cfg.get("type") == "sdk" and "instance" in cfg)
+            )
         }
         if sdk_servers:
             from ._mcp_bridge import McpHttpBridge
 
             self._mcp_bridge = McpHttpBridge()
-            for name in sdk_servers:
-                port = await self._mcp_bridge.start_server(name)
-                # Replace subprocess config with remote HTTP config
+            for name, cfg in sdk_servers.items():
+                if "_tools" in cfg:
+                    port = await self._mcp_bridge.start_server(name)
+                else:
+                    # Claude-format: host the mcp.server.Server instance directly
+                    port = await self._mcp_bridge.start_server_from_instance(
+                        name, cfg["instance"],
+                    )
+                # Replace config with remote HTTP config
                 effective_servers[name] = {
                     "url": f"http://127.0.0.1:{port}/mcp",
                 }

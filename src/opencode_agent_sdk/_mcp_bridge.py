@@ -14,6 +14,7 @@ import asyncio
 import inspect
 import logging
 import socket
+from contextlib import asynccontextmanager
 from typing import Any
 
 logger = logging.getLogger(__name__)
@@ -93,6 +94,67 @@ class McpHttpBridge:
         logger.info(
             "MCP HTTP bridge started: %s on port %d (%d tools)",
             name, port, len(tool_handlers),
+        )
+        return port
+
+    async def start_server_from_instance(self, name: str, server_instance: Any) -> int:
+        """Host an existing mcp.server.Server instance as an HTTP MCP server.
+
+        This enables cross-SDK compatibility: MCP servers created by the
+        claude-agent-sdk (``McpSdkServerConfig`` with ``type="sdk"`` and an
+        ``instance`` field) can be served over HTTP so the opencode ACP layer
+        can consume them.
+
+        Args:
+            name: MCP server name (for logging).
+            server_instance: An ``mcp.server.Server`` (low-level) with tool
+                handlers already registered.
+
+        Returns:
+            The port the server is listening on.
+        """
+        from mcp.server.streamable_http_manager import StreamableHTTPSessionManager
+        from fastmcp.server.http import StreamableHTTPASGIApp
+        from starlette.applications import Starlette
+        from starlette.routing import Route
+
+        session_manager = StreamableHTTPSessionManager(
+            app=server_instance,
+            stateless=True,
+        )
+        asgi_handler = StreamableHTTPASGIApp(session_manager)
+
+        @asynccontextmanager
+        async def lifespan(app: Any) -> Any:
+            async with session_manager.run():
+                yield
+
+        starlette_app = Starlette(
+            routes=[Route("/mcp", endpoint=asgi_handler, methods=["GET", "POST", "DELETE"])],
+            lifespan=lifespan,
+        )
+
+        port = _find_free_port()
+
+        import uvicorn
+
+        config = uvicorn.Config(
+            starlette_app,
+            host="127.0.0.1",
+            port=port,
+            log_level="warning",
+        )
+        uv_server = uvicorn.Server(config)
+        self._servers.append(uv_server)
+
+        task = asyncio.create_task(uv_server.serve())
+        self._tasks.append(task)
+
+        await asyncio.sleep(0.3)
+
+        logger.info(
+            "MCP HTTP bridge started (from instance): %s on port %d",
+            name, port,
         )
         return port
 
