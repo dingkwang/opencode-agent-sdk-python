@@ -254,7 +254,7 @@ class HTTPTransport:
                     data={
                         "tool_name": tool_name,
                         "tool_id": part.get("callID", part_id),
-                        "error": str(state),
+                        "error": str(state.get("error", state)),
                     },
                 )
 
@@ -263,11 +263,15 @@ class HTTPTransport:
 
         elif part_type == "step-finish":
             tokens = part.get("tokens", {})
+            from ..types import Usage
+            usage = Usage(
+                input_tokens=int(tokens.get("input", 0)),
+                output_tokens=int(tokens.get("output", 0)),
+                cache_creation_input_tokens=tokens.get("cache_creation_input_tokens"),
+                cache_read_input_tokens=tokens.get("cache_read_input_tokens"),
+            )
             return ResultMessage(
-                usage={
-                    "input_tokens": int(tokens.get("input", 0)),
-                    "output_tokens": int(tokens.get("output", 0)),
-                },
+                usage=usage,
                 total_cost_usd=part.get("cost", 0.0),
                 session_id=part.get("sessionID", self._session_id),
                 duration_ms=0.0,

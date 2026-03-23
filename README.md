@@ -47,9 +47,13 @@ async def main():
 asyncio.run(main())
 ```
 
-## SDKClient
+## Why OpenCode Agent SDK?
 
-`SDKClient` supports bidirectional conversations with an LLM via OpenCode. It works in two transport modes:
+- **Drop-in Replacement**: Seamlessly switch from `claude_agent_sdk` by just changing your imports.
+- **Open Source & Headless**: Take full control of your agent infrastructure. No more proprietary black boxes.
+- **Multi-Provider Support**: Use any LLM (Anthropic, OpenAI, xAI, Google, Locall) via OpenCode's backend.
+- **Native SSE Streaming**: Real-time response streaming for a better user experience.
+- **Advanced Control**: Fine-grained tool permission hooks and MCP server support builtin.
 
 - **HTTP mode** — communicates with a running `opencode serve` instance over REST
 - **Subprocess mode** — spawns `opencode acp` locally over stdio JSON-RPC

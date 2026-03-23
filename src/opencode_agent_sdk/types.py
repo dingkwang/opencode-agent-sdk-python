@@ -5,6 +5,15 @@ from typing import Any, Callable
 
 
 @dataclass
+class Usage:
+    """Usage stats for a response."""
+    input_tokens: int = 0
+    output_tokens: int = 0
+    cache_creation_input_tokens: int | None = None
+    cache_read_input_tokens: int | None = None
+
+
+@dataclass
 class TextBlock:
     text: str
     type: str = "text"
@@ -26,7 +35,7 @@ class AssistantMessage:
 
 @dataclass
 class ResultMessage:
-    usage: dict[str, Any] = field(default_factory=dict)
+    usage: Usage = field(default_factory=Usage)
     total_cost_usd: float = 0.0
     session_id: str = ""
     duration_ms: float = 0.0
