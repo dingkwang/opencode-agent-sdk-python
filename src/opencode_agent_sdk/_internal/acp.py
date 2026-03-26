@@ -341,11 +341,11 @@ class ACPSession:
                 text = content.get("text", "")
                 if text:
                     self._text_buffer += text
-                    # Flush immediately so consumers can stream text incrementally
+                    # Yield the full accumulated text so consumers can replace
+                    # their display (bot does accumulated_text = text, not +=)
                     yield AssistantMessage(
                         content=[TextBlock(text=self._text_buffer)]
                     )
-                    self._text_buffer = ""
 
             elif update_type == "tool_call":
                 tool_call_id = session_update.get("toolCallId", "")
