@@ -11,28 +11,76 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       version_changed: ${{ steps.check.outputs.changed }}
+      version_exists: ${{ steps.check.outputs.exists }}
       version: ${{ steps.check.outputs.version }}
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 2
 
-      - name: Check if version changed
+      - name: Check release eligibility
         id: check
         run: |
-          CURRENT=$(grep '^version' pyproject.toml | head -1 | sed 's/.*"\(.*\)".*/\1/')
-          PREVIOUS=$(git show HEAD~1:pyproject.toml 2>/dev/null | grep '^version' | head -1 | sed 's/.*"\(.*\)".*/\1/' || echo "")
-          echo "current=$CURRENT previous=$PREVIOUS"
-          if [ "$CURRENT" != "$PREVIOUS" ]; then
-            echo "changed=true" >> "$GITHUB_OUTPUT"
-            echo "version=$CURRENT" >> "$GITHUB_OUTPUT"
-          else
-            echo "changed=false" >> "$GITHUB_OUTPUT"
-          fi
+          python <<'PY'
+          import json
+          import os
+          import subprocess
+          import tomllib
+          import urllib.error
+          import urllib.request
+
+          with open("pyproject.toml", "rb") as f:
+              project = tomllib.load(f)["project"]
+
+          package_name = project["name"]
+          current_version = project["version"]
+          previous_version = ""
+
+          try:
+              previous_pyproject = subprocess.check_output(
+                  ["git", "show", "HEAD~1:pyproject.toml"],
+                  text=True,
+                  stderr=subprocess.DEVNULL,
+              )
+          except subprocess.CalledProcessError:
+              previous_pyproject = ""
+
+          if previous_pyproject:
+              previous_version = tomllib.loads(previous_pyproject)["project"]["version"]
+
+          version_changed = current_version != previous_version
+          version_exists = False
+
+          try:
+              with urllib.request.urlopen(
+                  f"https://pypi.org/pypi/{package_name}/json"
+              ) as response:
+                  pypi_data = json.load(response)
+              version_exists = current_version in pypi_data.get("releases", {})
+          except urllib.error.HTTPError as exc:
+              if exc.code != 404:
+                  raise
+
+          print(
+              f"package={package_name} current={current_version} "
+              f"previous={previous_version or '<none>'} "
+              f"changed={str(version_changed).lower()} "
+              f"exists_on_pypi={str(version_exists).lower()}"
+          )
+
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
+              output.write(f"changed={'true' if version_changed else 'false'}\n")
+              output.write(f"exists={'true' if version_exists else 'false'}\n")
+              output.write(f"version={current_version}\n")
+          PY
+
+      - name: Note skipped publish
+        if: steps.check.outputs.changed == 'true' && steps.check.outputs.exists == 'true'
+        run: echo "Version ${{ steps.check.outputs.version }} is already on PyPI; skipping publish."
 
   publish:
     needs: check-version
-    if: needs.check-version.outputs.version_changed == 'true'
+    if: needs.check-version.outputs.version_changed == 'true' && needs.check-version.outputs.version_exists != 'true'
     runs-on: ubuntu-latest
     environment: pypi
     permissions:
@@ -52,3 +100,5 @@ jobs:
 
       - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          skip-existing: true
