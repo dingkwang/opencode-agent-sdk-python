@@ -6,7 +6,7 @@ build-backend = "setuptools.build_meta"
 name = "opencode-agent-sdk"
 
 
-version = "0.4.11"
+version = "0.4.12"
 description = "Open-source Agent SDK backed by OpenCode ACP (drop-in replacement for claude_agent_sdk)"
 readme = "README.md"
 requires-python = ">=3.10"

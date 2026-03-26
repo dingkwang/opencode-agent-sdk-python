@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 import uuid
 from typing import Any, AsyncIterator
 
@@ -98,7 +99,23 @@ class ACPSession:
     async def _read_loop(self) -> None:
         """Read messages from transport and route them."""
         try:
+            _msg_count = 0
+            _first_ts: float | None = None
             async for msg in self._transport.read_messages():
+                _msg_count += 1
+                now = time.monotonic()
+                if _first_ts is None:
+                    _first_ts = now
+                method = msg.get("method", "")
+                if method in ("session/update", "sessionUpdate"):
+                    params = msg.get("params", {})
+                    update = params.get("update", params)
+                    utype = update.get("sessionUpdate", "")
+                    elapsed = now - _first_ts
+                    logger.info(
+                        "ACP msg #%d t=%.3fs type=%s",
+                        _msg_count, elapsed, utype,
+                    )
                 await self._handle_message(msg)
         except Exception as exc:
             logger.debug("Reader loop ended: %s", exc)
