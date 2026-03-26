@@ -1,10 +1,12 @@
 name: Publish to PyPI
 
 on:
+  workflow_dispatch:
   push:
     branches: [main]
     paths:
       - pyproject.toml
+      - .github/workflows/publish.yml
 
 jobs:
   check-version:
