@@ -341,15 +341,28 @@ class ACPSession:
                 text = content.get("text", "")
                 if text:
                     self._text_buffer += text
+                    # Flush immediately so consumers can stream text incrementally
+                    yield AssistantMessage(
+                        content=[TextBlock(text=self._text_buffer)]
+                    )
+                    self._text_buffer = ""
 
             elif update_type == "tool_call":
                 tool_call_id = session_update.get("toolCallId", "")
+                tool_name = session_update.get("title", "")
                 self._tool_calls[tool_call_id] = {
                     "id": tool_call_id,
-                    "name": session_update.get("title", ""),
+                    "name": tool_name,
                     "input": session_update.get("rawInput", {}),
                     "status": session_update.get("status", "pending"),
                 }
+                # Flush text buffer before tool starts so consumers see
+                # accumulated text immediately rather than after tool completes
+                if self._text_buffer:
+                    yield AssistantMessage(
+                        content=[TextBlock(text=self._text_buffer)]
+                    )
+                    self._text_buffer = ""
 
             elif update_type == "tool_call_update":
                 tool_call_id = session_update.get("toolCallId", "")
@@ -396,10 +409,12 @@ class ACPSession:
                 )
 
             elif update_type == "agent_thought_chunk":
+                # Yield thinking text as AssistantMessage so consumers can
+                # stream it without needing to handle SystemMessage separately.
+                # Kept separate from _text_buffer to avoid mixing with response text.
                 content = session_update.get("content", {})
                 text = content.get("text", "")
                 if text:
-                    yield SystemMessage(
-                        subtype="thought",
-                        data={"text": text},
+                    yield AssistantMessage(
+                        content=[TextBlock(text=text)]
                     )
