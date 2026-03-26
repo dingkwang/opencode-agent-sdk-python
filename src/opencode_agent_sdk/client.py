@@ -66,6 +66,7 @@ class SDKClient:
         self._http_mode = bool(options.server_url)
         self._pending_parts: dict[str, Any] | None = None
         self._mcp_bridge: Any = None  # McpHttpBridge for SDK MCP servers
+        self._prompt_task: Any = None  # Background task for subprocess prompt
 
     async def connect(self) -> None:
         """Connect to opencode — either via HTTP or subprocess ACP."""
@@ -208,7 +209,13 @@ class SDKClient:
             # Subprocess mode: send via ACP session
             if self._session is None:
                 raise ProcessError("Not connected. Call connect() first.", exit_code=1)
-            await self._session.prompt(parts)
+            # Launch prompt as a background task so receive_response() can
+            # start consuming sessionUpdate notifications immediately
+            # (streaming).  If we awaited prompt() here, all notifications
+            # would queue up and only be drained after the full turn
+            # completes, defeating streaming.
+            import asyncio
+            self._prompt_task = asyncio.create_task(self._session.prompt(parts))
 
     async def receive_response(
         self,
@@ -250,6 +257,11 @@ class SDKClient:
 
             async for msg in self._session.receive_messages():
                 yield msg
+
+            # Await the background prompt task to propagate any errors
+            if self._prompt_task is not None:
+                await self._prompt_task
+                self._prompt_task = None
 
 
 def _build_mcp_servers(servers: dict[str, Any]) -> list[dict[str, Any]]:
